@@ -56,6 +56,7 @@
   <section class="totals" id="totals"></section>
   <section id="modules"></section>
   <p class="msg" id="msg"></p>
+  <p class="msg">Widget v3 – statut lu dans la colonne Commentaire</p>
 </main>
 
 <script>
@@ -84,10 +85,12 @@
     if (s.indexOf('shn') > -1) return 'shn';
     return 'autres';
   }
-  // Statut déduit : Situation finale renseignée = clôturée ; avis renseigné = traitée ; sinon à traiter
+  // Statut lu dans la colonne « Commentaire » (sans tenir compte des accents ni des majuscules)
   function statusKey(r) {
-    if (txt(r.SituationFinale)) return 'closed';
-    if (txt(r.Avis)) return 'done';
+    var s = txt(r.Commentaire).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (s.indexOf('clotur') > -1) return 'closed';
+    if (s.indexOf('a traiter') > -1 || s.indexOf('non trait') > -1) return 'todo';
+    if (s.indexOf('trait') > -1) return 'done';
     return 'todo';
   }
 
@@ -120,7 +123,7 @@
           '<td>' + esc(txt(r.NumeroDossier)) + '</td><td>' + esc(txt(r.Bac)) + '</td>' +
           '<td>' + esc(txt(r.TypeSaisine)) + '</td><td>' + esc(txt(r.Avis)) + '</td>' +
           '<td>' + esc(txt(r.FormationDemandee)) + '</td><td>' + esc(txt(r.FormationProposee)) + '</td>' +
-          '<td>' + esc(txt(r.SituationFinale)) + '</td>' +
+          '<td>' + esc(txt(r.SituationFinale)) + '</td><td>' + esc(txt(r.Commentaire)) + '</td>' +
           '<td><span class="tag ' + o.st + '">' + STATUS[o.st] + '</span></td></tr>';
       }).join('');
       return '<article class="module ' + m.key + '"><h2>' + m.label + '</h2>' +
@@ -131,7 +134,7 @@
         '<details><summary>Voir les ' + t + ' dossier' + (t > 1 ? 's' : '') + '</summary><div class="wrap"><table><thead><tr>' +
         '<th>Nom</th><th>Prénom</th><th>N° de dossier</th><th>Bac</th><th>Type de saisine</th>' +
         '<th>Avis médecin / Maison Performance</th><th>Formation demandée</th><th>Formation proposée</th>' +
-        '<th>Situation finale</th><th>Statut</th></tr></thead><tbody>' + body + '</tbody></table></div></details></article>';
+        '<th>Situation finale</th><th>Commentaire</th><th>Statut</th></tr></thead><tbody>' + body + '</tbody></table></div></details></article>';
     }).join('');
 
     document.getElementById('msg').textContent = total === 0
@@ -148,10 +151,11 @@
         { name: 'NumeroDossier', title: 'Numéro de dossier', optional: true },
         { name: 'Bac', title: 'Bac', optional: true },
         { name: 'TypeSaisine', title: 'Type de saisine' },
-        { name: 'Avis', title: 'Avis médecin / Maison Performance' },
+        { name: 'Avis', title: 'Avis médecin / Maison Performance', optional: true },
         { name: 'FormationDemandee', title: 'Formation demandée', optional: true },
         { name: 'FormationProposee', title: 'Formation proposée', optional: true },
-        { name: 'SituationFinale', title: 'Situation finale' }
+        { name: 'SituationFinale', title: 'Situation finale', optional: true },
+        { name: 'Commentaire', title: 'Commentaire (statut)' }
       ]
     });
     grist.onRecords(function (records, mappings) {
@@ -166,6 +170,7 @@
       { Nom: 'Roux', Prenom: 'Tom', NumeroDossier: '26-004', Bac: 'S', TypeSaisine: 'SHN', Avis: '', FormationDemandee: 'CPGE', FormationProposee: '', SituationFinale: '' },
       { Nom: 'Blanc', Prenom: 'Inès', NumeroDossier: '26-005', Bac: 'L', TypeSaisine: 'Réorientation', Avis: '', FormationDemandee: 'BTS', FormationProposee: '', SituationFinale: 'Refus' }
     ];
+    demo.forEach(function (d) { d.Commentaire = d.SituationFinale ? 'Clôturé' : (d.Avis ? 'Traité' : 'À traiter'); });
     render(demo);
   }
 </script>
