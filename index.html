@@ -19,7 +19,7 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--ink);
     font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; }
-  main { padding: 16px; max-width: 1100px; margin: 0 auto; }
+  main { padding: 16px; max-width: 1200px; margin: 0 auto; }
   h1 { font-size: 20px; font-weight: 650; margin: 0 0 14px; }
 
   .totals { display: flex; flex-wrap: wrap; gap: 8px 32px; padding: 0 0 14px;
@@ -27,17 +27,26 @@
   .total b { display: block; font-size: 34px; line-height: 1.1; font-weight: 700; }
   .total span { font-size: 13px; color: var(--muted); }
 
-  .modules { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
-  .module { border-left: 6px solid var(--c); padding: 4px 0 4px 14px; }
-  .module h2 { font-size: 16px; margin: 0 0 10px; color: var(--c); font-weight: 650; }
-  .row { display: flex; justify-content: space-between; align-items: baseline;
-    padding: 5px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
-  .row b { font-size: 20px; }
-  .bar { height: 8px; border-radius: 4px; background: var(--track); margin-top: 12px; overflow: hidden; }
+  .module { border-left: 6px solid var(--c); padding: 2px 0 2px 14px; margin-bottom: 22px; }
+  .module h2 { font-size: 16px; margin: 0 0 8px; color: var(--c); font-weight: 650; }
+  .counts { display: flex; flex-wrap: wrap; gap: 6px 28px; font-size: 14px; }
+  .counts b { font-size: 20px; margin-right: 4px; }
+  .bar { height: 8px; border-radius: 4px; background: var(--track); margin: 10px 0 4px; overflow: hidden; max-width: 420px; }
   .bar i { display: block; height: 100%; width: 0; background: var(--c); transition: width .3s ease; }
-  .rate { font-size: 12px; color: var(--muted); margin-top: 5px; }
+  .rate { font-size: 12px; color: var(--muted); }
+
+  details { margin-top: 10px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--c); font-weight: 600; }
+  summary:focus-visible { outline: 2px solid var(--c); outline-offset: 2px; }
+  .wrap { overflow-x: auto; margin-top: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; border-bottom: 2px solid var(--c); }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; white-space: nowrap;
+    border: 1px solid var(--c); color: var(--c); }
+  .tag.closed { background: var(--c); color: var(--bg); }
   .medical { --c: var(--medical); } .shn { --c: var(--shn); } .autres { --c: var(--autres); }
-  .msg { font-size: 13px; color: var(--muted); margin-top: 16px; }
+  .msg { font-size: 13px; color: var(--muted); }
   @media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
 </style>
 </head>
@@ -45,7 +54,7 @@
 <main>
   <h1>CAES 2026 – Suivi des demandes</h1>
   <section class="totals" id="totals"></section>
-  <section class="modules" id="modules"></section>
+  <section id="modules"></section>
   <p class="msg" id="msg"></p>
 </main>
 
@@ -55,30 +64,41 @@
     { key: 'shn',     label: 'CAES SHN' },
     { key: 'autres',  label: 'CAES Autres demandes' }
   ];
+  var STATUS = { todo: 'À traiter', done: 'Traitée', closed: 'Clôturée' };
 
-  function moduleKey(v) {
-    var s = String(v || '').toLowerCase();
-    if (s.indexOf('médic') > -1 || s.indexOf('medic') > -1 || s.indexOf('handicap') > -1) return 'medical';
+  function txt(v) {
+    if (v === null || v === undefined) return '';
+    if (Array.isArray(v)) return v.filter(function (x) { return x !== 'L'; }).join(', ');
+    return String(v).trim();
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  // Module d’après la colonne « Type de saisine »
+  function moduleKey(r) {
+    var s = txt(r.TypeSaisine).toLowerCase();
+    if (s.indexOf('médic') > -1 || s.indexOf('medic') > -1) return 'medical';
     if (s.indexOf('shn') > -1) return 'shn';
     return 'autres';
   }
-  function statusKey(v) {
-    var s = String(v || '').toLowerCase();
-    if (s.indexOf('clôtur') > -1 || s.indexOf('clotur') > -1) return 'closed';
-    if (s.indexOf('traiter') > -1) return 'todo';
-    if (s.indexOf('trait') > -1) return 'done';
-    return null;
+  // Statut déduit : Situation finale renseignée = clôturée ; avis renseigné = traitée ; sinon à traiter
+  function statusKey(r) {
+    if (txt(r.SituationFinale)) return 'closed';
+    if (txt(r.Avis)) return 'done';
+    return 'todo';
   }
 
   function render(records) {
-    var c = { all: { todo: 0, done: 0, closed: 0 } };
-    MODULES.forEach(function (m) { c[m.key] = { todo: 0, done: 0, closed: 0 }; });
+    var c = { all: { todo: 0, done: 0, closed: 0 } }, rows = {};
+    MODULES.forEach(function (m) { c[m.key] = { todo: 0, done: 0, closed: 0 }; rows[m.key] = []; });
 
     records.forEach(function (r) {
-      var st = statusKey(r.Statut);
-      if (!st) return;
-      c[moduleKey(r.Module)][st]++;
-      c.all[st]++;
+      var m = moduleKey(r), st = statusKey(r);
+      c[m][st]++; c.all[st]++;
+      rows[m].push({ r: r, st: st });
     });
 
     var total = c.all.todo + c.all.done + c.all.closed;
@@ -91,16 +111,31 @@
     document.getElementById('modules').innerHTML = MODULES.map(function (m) {
       var x = c[m.key], t = x.todo + x.done + x.closed;
       var pct = t ? Math.round(x.closed * 100 / t) : 0;
+      var list = rows[m.key].sort(function (a, b) {
+        return txt(a.r.Nom).localeCompare(txt(b.r.Nom), 'fr');
+      });
+      var body = list.map(function (o) {
+        var r = o.r;
+        return '<tr><td>' + esc(txt(r.Nom)) + '</td><td>' + esc(txt(r.Prenom)) + '</td>' +
+          '<td>' + esc(txt(r.NumeroDossier)) + '</td><td>' + esc(txt(r.Bac)) + '</td>' +
+          '<td>' + esc(txt(r.TypeSaisine)) + '</td><td>' + esc(txt(r.Avis)) + '</td>' +
+          '<td>' + esc(txt(r.FormationDemandee)) + '</td><td>' + esc(txt(r.FormationProposee)) + '</td>' +
+          '<td>' + esc(txt(r.SituationFinale)) + '</td>' +
+          '<td><span class="tag ' + o.st + '">' + STATUS[o.st] + '</span></td></tr>';
+      }).join('');
       return '<article class="module ' + m.key + '"><h2>' + m.label + '</h2>' +
-        '<div class="row"><span>À traiter</span><b>' + x.todo + '</b></div>' +
-        '<div class="row"><span>Traitées</span><b>' + x.done + '</b></div>' +
-        '<div class="row"><span>Clôturées</span><b>' + x.closed + '</b></div>' +
+        '<div class="counts"><span><b>' + x.todo + '</b>à traiter</span>' +
+        '<span><b>' + x.done + '</b>traitées</span><span><b>' + x.closed + '</b>clôturées</span></div>' +
         '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
-        '<div class="rate">' + pct + ' % clôturées sur ' + t + ' demande' + (t > 1 ? 's' : '') + '</div></article>';
+        '<div class="rate">' + pct + ' % clôturées sur ' + t + ' demande' + (t > 1 ? 's' : '') + '</div>' +
+        '<details><summary>Voir les ' + t + ' dossier' + (t > 1 ? 's' : '') + '</summary><div class="wrap"><table><thead><tr>' +
+        '<th>Nom</th><th>Prénom</th><th>N° de dossier</th><th>Bac</th><th>Type de saisine</th>' +
+        '<th>Avis médecin / Maison Performance</th><th>Formation demandée</th><th>Formation proposée</th>' +
+        '<th>Situation finale</th><th>Statut</th></tr></thead><tbody>' + body + '</tbody></table></div></details></article>';
     }).join('');
 
     document.getElementById('msg').textContent = total === 0
-      ? 'Aucune demande à afficher. Vérifiez que les colonnes Module et Statut sont bien associées dans le panneau du widget.'
+      ? 'Aucune demande à afficher. Vérifiez l’association des colonnes dans le panneau du widget.'
       : '';
   }
 
@@ -108,21 +143,29 @@
     grist.ready({
       requiredAccess: 'read table',
       columns: [
-        { name: 'Module', title: 'Module', type: 'Choice,Text' },
-        { name: 'Statut', title: 'Statut', type: 'Choice,Text' }
+        { name: 'Nom', title: 'Nom', optional: true },
+        { name: 'Prenom', title: 'Prénom', optional: true },
+        { name: 'NumeroDossier', title: 'Numéro de dossier', optional: true },
+        { name: 'Bac', title: 'Bac', optional: true },
+        { name: 'TypeSaisine', title: 'Type de saisine' },
+        { name: 'Avis', title: 'Avis médecin / Maison Performance' },
+        { name: 'FormationDemandee', title: 'Formation demandée', optional: true },
+        { name: 'FormationProposee', title: 'Formation proposée', optional: true },
+        { name: 'SituationFinale', title: 'Situation finale' }
       ]
     });
     grist.onRecords(function (records, mappings) {
-      var mapped = grist.mapColumnNames(records, mappings);
-      render(mapped || []);
+      render(grist.mapColumnNames(records, mappings) || []);
     });
   } else {
     // Aperçu hors Grist : données d’exemple
-    var demo = [];
-    [['Médical / handicap', 'À traiter', 6], ['Médical / handicap', 'Traitée', 4], ['Médical / handicap', 'Clôturée', 9],
-     ['SHN', 'À traiter', 3], ['SHN', 'Traitée', 5], ['SHN', 'Clôturée', 12],
-     ['Autres demandes', 'À traiter', 2], ['Autres demandes', 'Traitée', 1], ['Autres demandes', 'Clôturée', 7]
-    ].forEach(function (d) { for (var i = 0; i < d[2]; i++) demo.push({ Module: d[0], Statut: d[1] }); });
+    var demo = [
+      { Nom: 'Martin', Prenom: 'Léa', NumeroDossier: '26-001', Bac: 'S', TypeSaisine: 'Médicale', Avis: 'Favorable', FormationDemandee: 'Licence STAPS', FormationProposee: 'Licence STAPS', SituationFinale: 'Admise' },
+      { Nom: 'Durand', Prenom: 'Karim', NumeroDossier: '26-002', Bac: 'STMG', TypeSaisine: 'Médicale', Avis: '', FormationDemandee: 'BUT GEA', FormationProposee: '', SituationFinale: '' },
+      { Nom: 'Petit', Prenom: 'Zoé', NumeroDossier: '26-003', Bac: 'ES', TypeSaisine: 'SHN', Avis: 'Favorable', FormationDemandee: 'Licence Droit', FormationProposee: 'Licence Droit', SituationFinale: '' },
+      { Nom: 'Roux', Prenom: 'Tom', NumeroDossier: '26-004', Bac: 'S', TypeSaisine: 'SHN', Avis: '', FormationDemandee: 'CPGE', FormationProposee: '', SituationFinale: '' },
+      { Nom: 'Blanc', Prenom: 'Inès', NumeroDossier: '26-005', Bac: 'L', TypeSaisine: 'Réorientation', Avis: '', FormationDemandee: 'BTS', FormationProposee: '', SituationFinale: 'Refus' }
+    ];
     render(demo);
   }
 </script>
