@@ -9,54 +9,69 @@
   :root {
     --bg: #ffffff; --ink: #1f2937; --muted: #6b7280; --line: #e5e7eb; --track: #eef0f3;
     --medical: #2563eb; --shn: #16a34a; --autres: #ea580c;
+    --ok: #16a34a; --warn: #b45309; --err: #dc2626;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #16191f; --ink: #e8eaed; --muted: #9aa0aa; --line: #2c313a; --track: #262b34;
       --medical: #60a5fa; --shn: #4ade80; --autres: #fb923c;
+      --ok: #4ade80; --warn: #fbbf24; --err: #f87171;
     }
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--ink);
     font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; }
-  main { padding: 16px; max-width: 1200px; margin: 0 auto; }
-  h1 { font-size: 20px; font-weight: 650; margin: 0 0 14px; }
+  main { padding: 16px; max-width: 1300px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 650; margin: 0 0 12px; }
+
+  #status { position: sticky; top: 0; z-index: 5; margin: 0 0 12px; padding: 8px 12px; border-radius: 6px;
+    font-size: 14px; border: 1px solid var(--line); background: var(--bg); }
+  #status:empty { display: none; }
+  #status.ok { border-color: var(--ok); color: var(--ok); }
+  #status.warn { border-color: var(--warn); color: var(--warn); }
+  #status.err { border-color: var(--err); color: var(--err); }
 
   .totals { display: flex; flex-wrap: wrap; gap: 8px 32px; padding: 0 0 14px;
     border-bottom: 1px solid var(--line); margin-bottom: 18px; }
   .total b { display: block; font-size: 34px; line-height: 1.1; font-weight: 700; }
   .total span { font-size: 13px; color: var(--muted); }
 
-  .module { border-left: 6px solid var(--c); padding: 2px 0 2px 14px; margin-bottom: 22px; }
+  .module { border-left: 6px solid var(--c); padding: 2px 0 2px 14px; margin-bottom: 26px; }
   .module h2 { font-size: 16px; margin: 0 0 8px; color: var(--c); font-weight: 650; }
   .counts { display: flex; flex-wrap: wrap; gap: 6px 28px; font-size: 14px; }
   .counts b { font-size: 20px; margin-right: 4px; }
   .bar { height: 8px; border-radius: 4px; background: var(--track); margin: 10px 0 4px; overflow: hidden; max-width: 420px; }
-  .bar i { display: block; height: 100%; width: 0; background: var(--c); transition: width .3s ease; }
-  .rate { font-size: 12px; color: var(--muted); }
+  .bar i { display: block; height: 100%; background: var(--c); }
+  .rate { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
 
-  details { margin-top: 10px; }
-  summary { cursor: pointer; font-size: 13px; color: var(--c); font-weight: 600; }
-  summary:focus-visible { outline: 2px solid var(--c); outline-offset: 2px; }
-  .wrap { overflow-x: auto; margin-top: 8px; }
+  .wrap { overflow-x: auto; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
   th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
   th { color: var(--muted); font-weight: 600; white-space: nowrap; border-bottom: 2px solid var(--c); }
   .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; white-space: nowrap;
     border: 1px solid var(--c); color: var(--c); }
   .tag.closed { background: var(--c); color: var(--bg); }
+
+  input.avis { width: 100%; min-width: 210px; font: inherit; color: inherit; background: transparent;
+    border: 1px solid var(--line); border-radius: 4px; padding: 5px 7px; }
+  input.avis:hover { border-color: var(--c); }
+  input.avis:focus-visible { outline: 2px solid var(--c); outline-offset: 1px; background: var(--bg); }
+  input.avis.dirty { border-color: var(--warn); }
+  input.avis.saved { border-color: var(--ok); }
+  input.avis.failed { border-color: var(--err); }
+
   .medical { --c: var(--medical); } .shn { --c: var(--shn); } .autres { --c: var(--autres); }
-  .msg { font-size: 13px; color: var(--muted); }
-  @media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+  .foot { font-size: 12px; color: var(--muted); margin-top: 8px; }
 </style>
 </head>
 <body>
 <main>
   <h1>CAES 2026 – Suivi des demandes</h1>
+  <p id="status" role="status" aria-live="polite"></p>
   <section class="totals" id="totals"></section>
   <section id="modules"></section>
-  <p class="msg" id="msg"></p>
-  <p class="msg">Widget v3 – statut lu dans la colonne Commentaire</p>
+  <datalist id="avis-list"></datalist>
+  <p class="foot" id="foot">Widget v5</p>
 </main>
 
 <script>
@@ -66,7 +81,10 @@
     { key: 'autres',  label: 'CAES Autres demandes' }
   ];
   var STATUS = { todo: 'À traiter', done: 'Traitée', closed: 'Clôturée' };
+  var latest = [], dirty = false;
 
+  function $(id) { return document.getElementById(id); }
+  function setStatus(msg, kind) { var s = $('status'); s.textContent = msg || ''; s.className = kind || ''; }
   function txt(v) {
     if (v === null || v === undefined) return '';
     if (Array.isArray(v)) return v.filter(function (x) { return x !== 'L'; }).join(', ');
@@ -77,17 +95,18 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
     });
   }
+  function plain(s) { return txt(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 
-  // Module d’après la colonne « Type de saisine »
+  // Module d’après « Type de saisine »
   function moduleKey(r) {
-    var s = txt(r.TypeSaisine).toLowerCase();
-    if (s.indexOf('médic') > -1 || s.indexOf('medic') > -1) return 'medical';
+    var s = plain(r.TypeSaisine);
+    if (s.indexOf('medic') > -1) return 'medical';
     if (s.indexOf('shn') > -1) return 'shn';
     return 'autres';
   }
-  // Statut lu dans la colonne « Commentaire » (sans tenir compte des accents ni des majuscules)
+  // Statut lu dans la colonne « Commentaire »
   function statusKey(r) {
-    var s = txt(r.Commentaire).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    var s = plain(r.Commentaire);
     if (s.indexOf('clotur') > -1) return 'closed';
     if (s.indexOf('a traiter') > -1 || s.indexOf('non trait') > -1) return 'todo';
     if (s.indexOf('trait') > -1) return 'done';
@@ -95,9 +114,16 @@
   }
 
   function render(records) {
+    latest = records; dirty = false;
+
+    var seen = {};
+    records.forEach(function (r) { var a = txt(r.Avis); if (a) seen[a] = 1; });
+    $('avis-list').innerHTML = Object.keys(seen).sort().map(function (a) {
+      return '<option value="' + esc(a) + '">';
+    }).join('');
+
     var c = { all: { todo: 0, done: 0, closed: 0 } }, rows = {};
     MODULES.forEach(function (m) { c[m.key] = { todo: 0, done: 0, closed: 0 }; rows[m.key] = []; });
-
     records.forEach(function (r) {
       var m = moduleKey(r), st = statusKey(r);
       c[m][st]++; c.all[st]++;
@@ -105,13 +131,13 @@
     });
 
     var total = c.all.todo + c.all.done + c.all.closed;
-    document.getElementById('totals').innerHTML =
+    $('totals').innerHTML =
       '<div class="total"><b>' + total + '</b><span>Demandes au total</span></div>' +
       '<div class="total"><b>' + c.all.todo + '</b><span>À traiter</span></div>' +
       '<div class="total"><b>' + c.all.done + '</b><span>Traitées</span></div>' +
       '<div class="total"><b>' + c.all.closed + '</b><span>Clôturées</span></div>';
 
-    document.getElementById('modules').innerHTML = MODULES.map(function (m) {
+    $('modules').innerHTML = MODULES.map(function (m) {
       var x = c[m.key], t = x.todo + x.done + x.closed;
       var pct = t ? Math.round(x.closed * 100 / t) : 0;
       var list = rows[m.key].sort(function (a, b) {
@@ -121,7 +147,9 @@
         var r = o.r;
         return '<tr><td>' + esc(txt(r.Nom)) + '</td><td>' + esc(txt(r.Prenom)) + '</td>' +
           '<td>' + esc(txt(r.NumeroDossier)) + '</td><td>' + esc(txt(r.Bac)) + '</td>' +
-          '<td>' + esc(txt(r.TypeSaisine)) + '</td><td>' + esc(txt(r.Avis)) + '</td>' +
+          '<td>' + esc(txt(r.TypeSaisine)) + '</td>' +
+          '<td><input class="avis" type="text" list="avis-list" data-id="' + r.id + '" data-orig="' + esc(txt(r.Avis)) +
+          '" value="' + esc(txt(r.Avis)) + '" aria-label="Avis médecin / Maison Performance"></td>' +
           '<td>' + esc(txt(r.FormationDemandee)) + '</td><td>' + esc(txt(r.FormationProposee)) + '</td>' +
           '<td>' + esc(txt(r.SituationFinale)) + '</td><td>' + esc(txt(r.Commentaire)) + '</td>' +
           '<td><span class="tag ' + o.st + '">' + STATUS[o.st] + '</span></td></tr>';
@@ -131,46 +159,110 @@
         '<span><b>' + x.done + '</b>traitées</span><span><b>' + x.closed + '</b>clôturées</span></div>' +
         '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
         '<div class="rate">' + pct + ' % clôturées sur ' + t + ' demande' + (t > 1 ? 's' : '') + '</div>' +
-        '<details><summary>Voir les ' + t + ' dossier' + (t > 1 ? 's' : '') + '</summary><div class="wrap"><table><thead><tr>' +
+        '<div class="wrap"><table><thead><tr>' +
         '<th>Nom</th><th>Prénom</th><th>N° de dossier</th><th>Bac</th><th>Type de saisine</th>' +
         '<th>Avis médecin / Maison Performance</th><th>Formation demandée</th><th>Formation proposée</th>' +
-        '<th>Situation finale</th><th>Commentaire</th><th>Statut</th></tr></thead><tbody>' + body + '</tbody></table></div></details></article>';
+        '<th>Situation finale</th><th>Commentaire</th><th>Statut</th></tr></thead><tbody>' + body +
+        '</tbody></table></div></article>';
     }).join('');
 
-    document.getElementById('msg').textContent = total === 0
-      ? 'Aucune demande à afficher. Vérifiez l’association des colonnes dans le panneau du widget.'
-      : '';
+    $('foot').textContent = 'Widget v5 – ' + records.length + ' ligne' + (records.length > 1 ? 's' : '') + ' reçue' + (records.length > 1 ? 's' : '') + ' de Grist';
   }
 
+  // Saisie en cours : on ne rafraîchit pas l’affichage pour ne rien écraser
+  function editing() {
+    var a = document.activeElement;
+    return (a && a.classList && a.classList.contains('avis')) || document.querySelector('input.avis.dirty');
+  }
+
+  function fail(el, msg) {
+    el.className = 'avis failed';
+    setStatus(msg, 'err');
+  }
+
+  function saveAvis(el) {
+    var id = Number(el.getAttribute('data-id')), v = el.value.trim();
+    if (v === el.getAttribute('data-orig')) { el.className = 'avis'; return; }
+
+    if (!window.grist) {                          // aperçu hors Grist
+      latest.forEach(function (r) { if (r.id === id) r.Avis = v; });
+      el.setAttribute('data-orig', v); el.className = 'avis saved';
+      setStatus('Aperçu : modification non envoyée à Grist.', 'warn');
+      return;
+    }
+    var fields = grist.mapColumnNamesBack({ Avis: v });
+    if (!fields) { fail(el, 'La colonne « Avis médecin / Maison Performance » n’est pas associée dans le panneau du widget.'); return; }
+
+    setStatus('Enregistrement…', 'warn');
+    grist.selectedTable.update({ id: id, fields: fields }).then(function () {
+      el.setAttribute('data-orig', v); el.className = 'avis saved';
+      setStatus('Avis enregistré dans Grist.', 'ok');
+      setTimeout(function () { if ($('status').className === 'ok') setStatus('', ''); }, 2500);
+      if (dirty && !editing()) render(latest);
+    }).catch(function (err) {
+      var m = err && err.message ? err.message : String(err);
+      var hint = /access|acc[eè]s|permission|denied|forbidden/i.test(m)
+        ? ' Vérifiez que le widget a l’« accès complet » dans le panneau de droite de Grist.' : '';
+      el.value = el.getAttribute('data-orig');
+      fail(el, 'Échec de l’enregistrement : ' + m + '.' + hint);
+    });
+  }
+
+  document.addEventListener('input', function (e) {
+    var el = e.target;
+    if (el.classList && el.classList.contains('avis')) {
+      el.className = el.value.trim() === el.getAttribute('data-orig') ? 'avis' : 'avis dirty';
+    }
+  });
+  document.addEventListener('change', function (e) {
+    if (e.target.classList && e.target.classList.contains('avis')) saveAvis(e.target);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (!e.target.classList || !e.target.classList.contains('avis')) return;
+    if (e.key === 'Enter') e.target.blur();
+    if (e.key === 'Escape') { e.target.value = e.target.getAttribute('data-orig'); e.target.className = 'avis'; e.target.blur(); }
+  });
+  document.addEventListener('focusout', function () {
+    setTimeout(function () { if (dirty && !editing()) render(latest); }, 300);
+  });
+
   if (window.grist) {
+    setStatus('En attente des données de Grist… Si ce message reste affiché, vérifiez l’association des colonnes et l’accès complet dans le panneau du widget.', 'warn');
     grist.ready({
-      requiredAccess: 'read table',
+      requiredAccess: 'full',
       columns: [
         { name: 'Nom', title: 'Nom', optional: true },
         { name: 'Prenom', title: 'Prénom', optional: true },
         { name: 'NumeroDossier', title: 'Numéro de dossier', optional: true },
         { name: 'Bac', title: 'Bac', optional: true },
         { name: 'TypeSaisine', title: 'Type de saisine' },
-        { name: 'Avis', title: 'Avis médecin / Maison Performance', optional: true },
+        { name: 'Avis', title: 'Avis médecin / Maison Performance' },
         { name: 'FormationDemandee', title: 'Formation demandée', optional: true },
         { name: 'FormationProposee', title: 'Formation proposée', optional: true },
         { name: 'SituationFinale', title: 'Situation finale', optional: true },
         { name: 'Commentaire', title: 'Commentaire (statut)' }
       ]
     });
-    grist.onRecords(function (records, mappings) {
-      render(grist.mapColumnNames(records, mappings) || []);
+    grist.onRecords(function (records) {
+      var mapped = grist.mapColumnNames(records);
+      if (!mapped) {
+        setStatus('Associez toutes les colonnes obligatoires dans le panneau du widget (à droite).', 'warn');
+        return;
+      }
+      if (!$('status').className || $('status').className === 'warn') setStatus('', '');
+      if (editing()) { latest = mapped; dirty = true; return; }
+      render(mapped);
     });
   } else {
-    // Aperçu hors Grist : données d’exemple
+    // Aperçu hors Grist : données d’exemple modifiables
     var demo = [
-      { Nom: 'Martin', Prenom: 'Léa', NumeroDossier: '26-001', Bac: 'S', TypeSaisine: 'Médicale', Avis: 'Favorable', FormationDemandee: 'Licence STAPS', FormationProposee: 'Licence STAPS', SituationFinale: 'Admise' },
-      { Nom: 'Durand', Prenom: 'Karim', NumeroDossier: '26-002', Bac: 'STMG', TypeSaisine: 'Médicale', Avis: '', FormationDemandee: 'BUT GEA', FormationProposee: '', SituationFinale: '' },
-      { Nom: 'Petit', Prenom: 'Zoé', NumeroDossier: '26-003', Bac: 'ES', TypeSaisine: 'SHN', Avis: 'Favorable', FormationDemandee: 'Licence Droit', FormationProposee: 'Licence Droit', SituationFinale: '' },
-      { Nom: 'Roux', Prenom: 'Tom', NumeroDossier: '26-004', Bac: 'S', TypeSaisine: 'SHN', Avis: '', FormationDemandee: 'CPGE', FormationProposee: '', SituationFinale: '' },
-      { Nom: 'Blanc', Prenom: 'Inès', NumeroDossier: '26-005', Bac: 'L', TypeSaisine: 'Réorientation', Avis: '', FormationDemandee: 'BTS', FormationProposee: '', SituationFinale: 'Refus' }
+      { Nom: 'Martin', Prenom: 'Léa', NumeroDossier: '26-001', Bac: 'S', TypeSaisine: 'Médicale', Avis: 'Favorable', FormationDemandee: 'Licence STAPS', FormationProposee: 'Licence STAPS', SituationFinale: 'Admise', Commentaire: 'Clôturé' },
+      { Nom: 'Durand', Prenom: 'Karim', NumeroDossier: '26-002', Bac: 'STMG', TypeSaisine: 'Médicale', Avis: '', FormationDemandee: 'BUT GEA', FormationProposee: '', SituationFinale: '', Commentaire: 'À traiter' },
+      { Nom: 'Petit', Prenom: 'Zoé', NumeroDossier: '26-003', Bac: 'ES', TypeSaisine: 'SHN', Avis: 'Favorable', FormationDemandee: 'Licence Droit', FormationProposee: 'Licence Droit', SituationFinale: '', Commentaire: 'Traité' },
+      { Nom: 'Roux', Prenom: 'Tom', NumeroDossier: '26-004', Bac: 'S', TypeSaisine: 'SHN', Avis: '', FormationDemandee: 'CPGE', FormationProposee: '', SituationFinale: '', Commentaire: '' },
+      { Nom: 'Blanc', Prenom: 'Inès', NumeroDossier: '26-005', Bac: 'L', TypeSaisine: 'Réorientation', Avis: '', FormationDemandee: 'BTS', FormationProposee: '', SituationFinale: 'Refus', Commentaire: 'Clôturé' }
     ];
-    demo.forEach(function (d) { d.Commentaire = d.SituationFinale ? 'Clôturé' : (d.Avis ? 'Traité' : 'À traiter'); });
+    demo.forEach(function (d, i) { d.id = i + 1; });
     render(demo);
   }
 </script>
